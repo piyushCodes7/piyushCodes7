@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIYUSH_SHARMA :: SYSTEM DASHBOARD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-dark: #003a0e;
+    --cyan: #00eeff;
+    --orange: #ff6b35;
+    --red: #ff2244;
+    --bg: #020b05;
+    --surface: #050f07;
+    --surface2: #091409;
+    --border: #00ff4130;
+    --border-bright: #00ff4188;
+    --text: #a8ffc0;
+    --text-dim: #4a8a5a;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Orbitron', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  /* Scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,65,0.015) 2px,
+      rgba(0,255,65,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* ─── BOOT SCREEN ─── */
+  #boot-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    padding: 2rem;
+  }
+
+  #boot-screen.hidden {
+    animation: bootFade 0.5s ease forwards;
+  }
+
+  @keyframes bootFade {
+    to { opacity: 0; pointer-events: none; }
+  }
+
+  .boot-log {
+    font-size: clamp(10px, 1.5vw, 13px);
+    color: var(--green);
+    max-width: 600px;
+    width: 100%;
+    line-height: 1.8;
+    text-shadow: 0 0 8px var(--green);
+  }
+
+  .boot-log .boot-line {
+    opacity: 0;
+    animation: bootLine 0.1s ease forwards;
+  }
+
+  @keyframes bootLine {
+    to { opacity: 1; }
+  }
+
+  .boot-cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: var(--green);
+    animation: blink 0.7s step-end infinite;
+    vertical-align: middle;
+    margin-left: 4px;
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ─── HEADER ─── */
+  header {
+    position: relative;
+    padding: 2rem 2rem 1rem;
+    border-bottom: 1px solid var(--border-bright);
+    background: linear-gradient(180deg, rgba(0,255,65,0.05) 0%, transparent 100%);
+    overflow: hidden;
+  }
+
+  .header-grid {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .operator-id {
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 4vw, 2.8rem);
+    font-weight: 900;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 40px var(--green-dim);
+    letter-spacing: 0.1em;
+    line-height: 1;
+  }
+
+  .operator-sub {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 0.4rem;
+    letter-spacing: 0.15em;
+  }
+
+  .system-clock {
+    text-align: right;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .clock-time {
+    font-size: 1.2rem;
+    color: var(--green);
+    font-family: var(--font-display);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 1.5s ease-in-out infinite;
+    margin-right: 6px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ─── MAIN GRID ─── */
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 1rem;
+  }
+
+  /* ─── PANEL BASE ─── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    animation: panelIn 0.6s ease forwards;
+    opacity: 0;
+  }
+
+  @keyframes panelIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+  }
+
+  .panel-header {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.65rem;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0,255,65,0.03);
+  }
+
+  .panel-content {
+    padding: 1rem;
+  }
+
+  /* ─── GRID SPANS ─── */
+  .col-4 { grid-column: span 4; }
+  .col-3 { grid-column: span 3; }
+  .col-6 { grid-column: span 6; }
+  .col-8 { grid-column: span 8; }
+  .col-12 { grid-column: span 12; }
+
+  @media (max-width: 900px) {
+    .col-4, .col-3, .col-6, .col-8 { grid-column: span 12; }
+  }
+
+  /* ─── IDENTITY PANEL ─── */
+  .identity-avatar {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 2px solid var(--green);
+    box-shadow: 0 0 20px var(--green-dim);
+    display: block;
+    margin-bottom: 0.8rem;
+  }
+
+  .identity-name {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .identity-bio {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 0.4rem;
+    line-height: 1.5;
+  }
+
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.8rem;
+  }
+
+  .tag {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border-bright);
+    color: var(--green-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ─── STAT BLOCKS ─── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  .stat-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 0.6rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-block::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--green);
+    transform: scaleX(0);
+    transition: transform 0.3s;
+    transform-origin: left;
+  }
+
+  .stat-block:hover::after { transform: scaleX(1); }
+
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--green);
+    text-shadow: 0 0 15px var(--green);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* ─── LANGUAGE BARS ─── */
+  .lang-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.7rem;
+  }
+
+  .lang-name {
+    width: 90px;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+
+  .lang-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .lang-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--cyan));
+    box-shadow: 0 0 8px var(--green);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 1s ease 0.5s;
+  }
+
+  .lang-count {
+    width: 30px;
+    text-align: right;
+    color: var(--text-dim);
+    font-size: 0.65rem;
+    flex-shrink: 0;
+  }
+
+  /* ─── REPOS ─── */
+  .repo-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 0.8rem;
+    margin-bottom: 0.6rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+  }
+
+  .repo-card:hover {
+    border-color: var(--green);
+    box-shadow: 0 0 15px rgba(0,255,65,0.1);
+  }
+
+  .repo-name {
+    font-size: 0.8rem;
+    color: var(--green);
+    font-weight: bold;
+    text-shadow: 0 0 6px var(--green);
+  }
+
+  .repo-desc {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+    line-height: 1.4;
+  }
+
+  .repo-meta {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+  }
+
+  .repo-lang-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 4px var(--cyan);
+    margin-right: 4px;
+  }
+
+  /* ─── ACTIVITY FEED ─── */
+  .activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.68rem;
+    animation: fadeIn 0.4s ease forwards;
+    opacity: 0;
+  }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  .activity-type {
+    flex-shrink: 0;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.55rem;
+    border: 1px solid;
+    letter-spacing: 0.1em;
+  }
+
+  .type-push { color: var(--green); border-color: var(--green); }
+  .type-create { color: var(--cyan); border-color: var(--cyan); }
+  .type-watch { color: var(--orange); border-color: var(--orange); }
+  .type-fork { color: #aa88ff; border-color: #aa88ff; }
+  .type-pr { color: var(--cyan); border-color: var(--cyan); }
+  .type-issue { color: var(--red); border-color: var(--red); }
+
+  .activity-repo {
+    color: var(--green);
+    font-weight: bold;
+  }
+
+  .activity-msg {
+    color: var(--text-dim);
+    margin-left: 0.3rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+  }
+
+  /* ─── PROGRESS / MISSION PANEL ─── */
+  .mission-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 0.7rem;
+    font-size: 0.7rem;
+  }
+
+  .mission-label {
+    width: 140px;
+    flex-shrink: 0;
+    color: var(--text);
+  }
+
+  .mission-track {
+    flex: 1;
+    height: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .mission-fill {
+    height: 100%;
+    position: relative;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 1.2s cubic-bezier(0.4,0,0.2,1) var(--delay, 0s);
+  }
+
+  .mission-fill::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: white;
+    opacity: 0.8;
+    box-shadow: 0 0 8px white;
+  }
+
+  .mf-green { background: linear-gradient(90deg, var(--green-dark), var(--green)); box-shadow: 0 0 8px var(--green); }
+  .mf-cyan  { background: linear-gradient(90deg, #003344, var(--cyan)); box-shadow: 0 0 8px var(--cyan); }
+  .mf-orange{ background: linear-gradient(90deg, #3a1000, var(--orange)); box-shadow: 0 0 8px var(--orange); }
+
+  .mission-pct {
+    width: 35px;
+    text-align: right;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  /* ─── SCROLLING TICKER ─── */
+  .ticker-wrap {
+    grid-column: span 12;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0.4rem 0;
+    position: relative;
+  }
+
+  .ticker-wrap::before, .ticker-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 60px;
+    z-index: 2;
+  }
+
+  .ticker-wrap::before {
+    left: 0;
+    background: linear-gradient(90deg, var(--surface), transparent);
+  }
+
+  .ticker-wrap::after {
+    right: 0;
+    background: linear-gradient(-90deg, var(--surface), transparent);
+  }
+
+  .ticker {
+    display: flex;
+    white-space: nowrap;
+    animation: ticker 30s linear infinite;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+  }
+
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .ticker-item {
+    padding: 0 2rem;
+    border-right: 1px solid var(--border);
+  }
+
+  .ticker-item span { color: var(--green); margin-right: 0.5rem; }
+
+  /* ─── LOADING STATE ─── */
+  .loading-pulse {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .loading-pulse::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 1s ease infinite;
+    flex-shrink: 0;
+  }
+
+  /* ─── ERROR ─── */
+  .error-msg {
+    font-size: 0.7rem;
+    color: var(--red);
+    padding: 0.5rem;
+    border: 1px solid var(--red);
+    background: rgba(255,34,68,0.05);
+  }
+
+  /* ─── FOOTER ─── */
+  footer {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem 2rem 2rem;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    text-align: center;
+    border-top: 1px solid var(--border);
+    letter-spacing: 0.15em;
+  }
+
+  /* ─── GLITCH EFFECT ─── */
+  .glitch {
+    position: relative;
+  }
+
+  .glitch::before, .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .glitch::before {
+    color: var(--cyan);
+    animation: glitch1 3s infinite;
+    clip-path: polygon(0 0, 100% 0, 100% 40%, 0 40%);
+  }
+
+  .glitch::after {
+    color: var(--red);
+    animation: glitch2 3s infinite;
+    clip-path: polygon(0 60%, 100% 60%, 100% 100%, 0 100%);
+  }
+
+  @keyframes glitch1 {
+    0%, 90%, 100% { transform: translateX(0); opacity: 0; }
+    92% { transform: translateX(-3px); opacity: 0.8; }
+    94% { transform: translateX(3px); opacity: 0.8; }
+    96% { transform: translateX(0); opacity: 0; }
+  }
+
+  @keyframes glitch2 {
+    0%, 85%, 100% { transform: translateX(0); opacity: 0; }
+    87% { transform: translateX(3px); opacity: 0.8; }
+    89% { transform: translateX(-3px); opacity: 0.8; }
+    91% { transform: translateX(0); opacity: 0; }
+  }
+
+  /* ─── MATRIX RAIN CANVAS ─── */
+  #matrix-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: -1;
+    opacity: 0.04;
+  }
+
+  /* delay animations */
+  .panel:nth-child(1) { animation-delay: 0.1s; }
+  .panel:nth-child(2) { animation-delay: 0.2s; }
+  .panel:nth-child(3) { animation-delay: 0.3s; }
+  .panel:nth-child(4) { animation-delay: 0.4s; }
+  .panel:nth-child(5) { animation-delay: 0.5s; }
+  .panel:nth-child(6) { animation-delay: 0.6s; }
+  .panel:nth-child(7) { animation-delay: 0.7s; }
+  .panel:nth-child(8) { animation-delay: 0.8s; }
+</style>
+</head>
+<body>
+
+<canvas id="matrix-canvas"></canvas>
+
+<!-- BOOT SCREEN -->
+<div id="boot-screen">
+  <div class="boot-log" id="boot-log">
+    <div style="font-family:'Orbitron',monospace;font-size:1.2rem;color:#00ff41;text-shadow:0 0 15px #00ff41;margin-bottom:1.5rem;letter-spacing:0.1em;">
+      PIYUSH_SHARMA :: SYSTEM INIT
+    </div>
+  </div>
+</div>
+
+<!-- MATRIX CANVAS -->
+
+<!-- HEADER -->
+<header>
+  <div class="header-grid">
+    <div>
+      <div class="operator-id glitch" data-text="PIYUSH_SHARMA">PIYUSH_SHARMA</div>
+      <div class="operator-sub"><span class="status-dot"></span>OPERATOR NODE ONLINE &nbsp;|&nbsp; ASPIRING SOFTWARE DEVELOPER &nbsp;|&nbsp; @piyushCodes7</div>
+    </div>
+    <div class="system-clock">
+      <div class="clock-time" id="clock">--:--:--</div>
+      <div>UTC &nbsp;|&nbsp; SYSTEM TIME</div>
+      <div id="last-sync" style="margin-top:0.3rem;">SYNCING...</div>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN DASHBOARD -->
+<main>
+
+  <!-- TICKER -->
+  <div class="ticker-wrap col-12">
+    <div class="ticker" id="ticker">
+      <span class="ticker-item"><span>SYS</span>DASHBOARD ONLINE</span>
+      <span class="ticker-item"><span>NET</span>GITHUB API CONNECTED</span>
+      <span class="ticker-item"><span>OPR</span>PIYUSH SHARMA // BUILDING</span>
+      <span class="ticker-item"><span>MSN</span>HIGH-IMPACT DEVELOPER ROLE</span>
+      <span class="ticker-item"><span>STK</span>PYTHON | C | C++ | JS | FLASK</span>
+      <span class="ticker-item"><span>SYS</span>DASHBOARD ONLINE</span>
+      <span class="ticker-item"><span>NET</span>GITHUB API CONNECTED</span>
+      <span class="ticker-item"><span>OPR</span>PIYUSH SHARMA // BUILDING</span>
+      <span class="ticker-item"><span>MSN</span>HIGH-IMPACT DEVELOPER ROLE</span>
+      <span class="ticker-item"><span>STK</span>PYTHON | C | C++ | JS | FLASK</span>
+    </div>
+  </div>
+
+  <!-- IDENTITY PANEL -->
+  <div class="panel col-3">
+    <div class="panel-header">
+      <span>IDENTITY_NODE</span>
+      <span style="color:var(--text-dim)">01/08</span>
+    </div>
+    <div class="panel-content" id="identity-panel">
+      <div class="loading-pulse">FETCHING IDENTITY...</div>
+    </div>
+  </div>
+
+  <!-- STATS PANEL -->
+  <div class="panel col-3">
+    <div class="panel-header">
+      <span>TELEMETRY</span>
+      <span style="color:var(--text-dim)">02/08</span>
+    </div>
+    <div class="panel-content" id="stats-panel">
+      <div class="loading-pulse">COMPUTING STATS...</div>
+    </div>
+  </div>
+
+  <!-- LANGUAGES PANEL -->
+  <div class="panel col-3">
+    <div class="panel-header">
+      <span>LANG_MODULES</span>
+      <span style="color:var(--text-dim)">03/08</span>
+    </div>
+    <div class="panel-content" id="lang-panel">
+      <div class="loading-pulse">SCANNING LANGUAGES...</div>
+    </div>
+  </div>
+
+  <!-- MISSION STATUS -->
+  <div class="panel col-3">
+    <div class="panel-header">
+      <span>ACTIVE_PROCESSES</span>
+      <span style="color:var(--text-dim)">04/08</span>
+    </div>
+    <div class="panel-content">
+      <div class="mission-row">
+        <span class="mission-label">Python Mastery</span>
+        <div class="mission-track"><div class="mission-fill mf-green" style="--delay:0.2s" data-pct="0.72"></div></div>
+        <span class="mission-pct">72%</span>
+      </div>
+      <div class="mission-row">
+        <span class="mission-label">DSA Grind</span>
+        <div class="mission-track"><div class="mission-fill mf-cyan" style="--delay:0.4s" data-pct="0.38"></div></div>
+        <span class="mission-pct">38%</span>
+      </div>
+      <div class="mission-row">
+        <span class="mission-label">Machine Learning</span>
+        <div class="mission-track"><div class="mission-fill mf-orange" style="--delay:0.6s" data-pct="0.47"></div></div>
+        <span class="mission-pct">47%</span>
+      </div>
+      <div class="mission-row">
+        <span class="mission-label">Web Dev</span>
+        <div class="mission-track"><div class="mission-fill mf-green" style="--delay:0.8s" data-pct="0.65"></div></div>
+        <span class="mission-pct">65%</span>
+      </div>
+      <div class="mission-row">
+        <span class="mission-label">Project Shipping</span>
+        <div class="mission-track"><div class="mission-fill mf-cyan" style="--delay:1s" data-pct="0.80"></div></div>
+        <span class="mission-pct">80%</span>
+      </div>
+      <div style="margin-top:0.8rem;font-size:0.6rem;color:var(--text-dim);border-top:1px solid var(--border);padding-top:0.6rem;">
+        <span style="color:var(--green)">OBJECTIVE:</span> HIGH-IMPACT DEV ROLE<br>
+        <span style="color:var(--green)">APPROACH:</span> BUILD. SHIP. REPEAT.
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP REPOS -->
+  <div class="panel col-6">
+    <div class="panel-header">
+      <span>MISSION_LOG :: TOP_REPOS</span>
+      <span style="color:var(--text-dim)">05/08</span>
+    </div>
+    <div class="panel-content" id="repos-panel">
+      <div class="loading-pulse">FETCHING MISSION DATA...</div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY FEED -->
+  <div class="panel col-6">
+    <div class="panel-header">
+      <span>LIVE_ACTIVITY_FEED</span>
+      <span style="color:var(--text-dim)">06/08</span>
+    </div>
+    <div class="panel-content" id="activity-panel">
+      <div class="loading-pulse">MONITORING EVENTS...</div>
+    </div>
+  </div>
+
+  <!-- ORGS -->
+  <div class="panel col-4">
+    <div class="panel-header">
+      <span>ORG_MEMBERSHIPS</span>
+      <span style="color:var(--text-dim)">07/08</span>
+    </div>
+    <div class="panel-content" id="orgs-panel">
+      <div class="loading-pulse">SCANNING NETWORK...</div>
+    </div>
+  </div>
+
+  <!-- CONTRIBUTION GRAPH -->
+  <div class="panel col-8">
+    <div class="panel-header">
+      <span>CONTRIBUTION_MATRIX</span>
+      <span style="color:var(--text-dim)">08/08</span>
+    </div>
+    <div class="panel-content" style="text-align:center;">
+      <img src="https://ghchart.rshah.org/00ff41/piyushCodes7"
+           alt="Contribution Graph"
+           style="width:100%;max-width:600px;filter:drop-shadow(0 0 8px #00ff41);"
+           onerror="this.style.display='none';document.getElementById('contrib-fallback').style.display='block'">
+      <div id="contrib-fallback" style="display:none;font-size:0.7rem;color:var(--text-dim);">
+        > CONTRIBUTION DATA UNAVAILABLE — CHECK NETWORK
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <div>[ SYS ] &nbsp; PIYUSH_SHARMA.EXE &mdash; STILL RUNNING &nbsp;|&nbsp; DATA PULLED LIVE FROM GITHUB API</div>
+  <div style="margin-top:0.3rem;">LAST SYNC: <span id="footer-sync">—</span></div>
+</footer>
+
+<script>
+const USERNAME = 'piyushCodes7';
+const API = 'https://api.github.com';
+
+// ─── MATRIX RAIN ───
+const canvas = document.getElementById('matrix-canvas');
+const ctx = canvas.getContext('2d');
+let drops = [];
+
+function initMatrix() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const cols = Math.floor(canvas.width / 16);
+  drops = Array(cols).fill(1);
+}
+
+function drawMatrix() {
+  ctx.fillStyle = 'rgba(2,11,5,0.05)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#00ff41';
+  ctx.font = '14px Share Tech Mono';
+  drops.forEach((y, i) => {
+    const char = String.fromCharCode(0x30A0 + Math.random() * 96);
+    ctx.fillText(char, i * 16, y * 16);
+    if (y * 16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+    drops[i]++;
+  });
+}
+
+initMatrix();
+window.addEventListener('resize', initMatrix);
+setInterval(drawMatrix, 50);
+
+// ─── CLOCK ───
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toUTCString().split(' ')[4];
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── BOOT SEQUENCE ───
+const bootLines = [
+  '> BIOS v4.2.1 ... OK',
+  '> Memory check ... 8192MB ... PASS',
+  '> Loading kernel modules ...',
+  '> Mounting /dev/ambition ... OK',
+  '> Starting github.api.service ...',
+  '> Fetching identity node: piyushCodes7 ...',
+  '> Establishing secure channel ...',
+  '> Decrypting repository manifest ...',
+  '> SYSTEM READY. Loading dashboard ...',
+];
+
+async function runBoot() {
+  const log = document.getElementById('boot-log');
+  for (let i = 0; i < bootLines.length; i++) {
+    await new Promise(r => setTimeout(r, 180 + Math.random() * 120));
+    const line = document.createElement('div');
+    line.className = 'boot-line';
+    line.style.animationDelay = '0s';
+    line.textContent = bootLines[i];
+    if (i === bootLines.length - 1) line.style.color = '#00eeff';
+    log.appendChild(line);
+  }
+  await new Promise(r => setTimeout(r, 400));
+  document.getElementById('boot-screen').classList.add('hidden');
+  setTimeout(() => document.getElementById('boot-screen').remove(), 600);
+  loadData();
+}
+
+// ─── FETCH HELPERS ───
+async function ghFetch(path) {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Accept': 'application/vnd.github+json' }
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// ─── LANG COLORS ───
+const LANG_COLORS = {
+  Python:'#3572A5', JavaScript:'#f1e05a', 'C++':'#f34b7d',
+  C:'#555555', HTML:'#e34c26', CSS:'#563d7c', TypeScript:'#2b7489',
+  Java:'#b07219', Rust:'#dea584', Go:'#00ADD8', Shell:'#89e051',
+};
+
+// ─── RENDER FUNCTIONS ───
+function renderIdentity(user, orgs) {
+  const el = document.getElementById('identity-panel');
+  const joined = new Date(user.created_at).getFullYear();
+  el.innerHTML = `
+    <img class="identity-avatar" src="${user.avatar_url}" alt="avatar" loading="lazy">
+    <div class="identity-name">${user.name || user.login}</div>
+    <div class="identity-bio">${user.bio || 'Building. Learning. Becoming.'}</div>
+    <div style="font-size:0.62rem;color:var(--text-dim);margin-top:0.6rem;">
+      <div>📍 ${user.location || 'India'}</div>
+      <div>📅 OPERATOR SINCE ${joined}</div>
+      ${user.blog ? `<div>🔗 <a href="${user.blog}" target="_blank" style="color:var(--green)">${user.blog.replace('https://','')}</a></div>` : ''}
+    </div>
+    <div class="tag-row">
+      <span class="tag">Python</span>
+      <span class="tag">ML</span>
+      <span class="tag">DSA</span>
+      <span class="tag">Flask</span>
+      <span class="tag">Builder</span>
+    </div>
+  `;
+}
+
+function renderStats(user, repos) {
+  const el = document.getElementById('stats-panel');
+  const stars = repos.reduce((a,r) => a + r.stargazers_count, 0);
+  const forks = repos.reduce((a,r) => a + r.forks_count, 0);
+  const original = repos.filter(r => !r.fork).length;
+  el.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-block">
+        <div class="stat-value">${user.public_repos}</div>
+        <div class="stat-label">Repositories</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">${stars}</div>
+        <div class="stat-label">Stars Earned</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">${user.followers}</div>
+        <div class="stat-label">Followers</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">${forks}</div>
+        <div class="stat-label">Forks</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">${original}</div>
+        <div class="stat-label">Original Repos</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">${user.following}</div>
+        <div class="stat-label">Following</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLangs(repos) {
+  const el = document.getElementById('lang-panel');
+  const langCount = {};
+  repos.forEach(r => { if (r.language) langCount[r.language] = (langCount[r.language]||0) + 1; });
+  const sorted = Object.entries(langCount).sort((a,b) => b[1]-a[1]).slice(0, 7);
+  const max = sorted[0]?.[1] || 1;
+
+  el.innerHTML = sorted.map(([lang, count]) => `
+    <div class="lang-row">
+      <span class="lang-name" style="color:${LANG_COLORS[lang]||'var(--text)'}">◆ ${lang}</span>
+      <div class="lang-bar-track">
+        <div class="lang-bar-fill" data-pct="${count/max}" style="background:linear-gradient(90deg,${LANG_COLORS[lang]||'var(--green)'}55,${LANG_COLORS[lang]||'var(--green)'});box-shadow:0 0 8px ${LANG_COLORS[lang]||'var(--green)'}"></div>
+      </div>
+      <span class="lang-count">${count}</span>
+    </div>
+  `).join('');
+
+  // Animate bars
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.lang-bar-fill').forEach(b => {
+      b.style.transform = `scaleX(${b.dataset.pct})`;
+    });
+  });
+}
+
+function renderRepos(repos) {
+  const el = document.getElementById('repos-panel');
+  const top = [...repos].sort((a,b) =>
+    (b.stargazers_count + b.forks_count) - (a.stargazers_count + a.forks_count)
+  ).filter(r => !r.fork).slice(0, 5);
+
+  if (!top.length) { el.innerHTML = '<div class="error-msg">> NO REPOS FOUND</div>'; return; }
+
+  el.innerHTML = top.map(r => `
+    <a class="repo-card" href="${r.html_url}" target="_blank">
+      <div class="repo-name">> ${r.name}</div>
+      <div class="repo-desc">${r.description || 'No description logged.'}</div>
+      <div class="repo-meta">
+        ${r.language ? `<span><span class="repo-lang-dot" style="background:${LANG_COLORS[r.language]||'var(--cyan)'}"></span>${r.language}</span>` : ''}
+        <span>★ ${r.stargazers_count}</span>
+        <span>⑂ ${r.forks_count}</span>
+        <span>${r.updated_at.slice(0,10)}</span>
+      </div>
+    </a>
+  `).join('');
+}
+
+function renderActivity(events) {
+  const el = document.getElementById('activity-panel');
+  const typeMap = {
+    PushEvent: ['PUSH', 'type-push'],
+    CreateEvent: ['CREATE', 'type-create'],
+    WatchEvent: ['STAR', 'type-watch'],
+    ForkEvent: ['FORK', 'type-fork'],
+    PullRequestEvent: ['PR', 'type-pr'],
+    IssuesEvent: ['ISSUE', 'type-issue'],
+  };
+
+  const items = events.slice(0, 10).map((e, i) => {
+    const [label, cls] = typeMap[e.type] || ['EVENT', 'type-push'];
+    const repo = e.repo.name.split('/')[1];
+    let msg = '';
+    if (e.type === 'PushEvent') {
+      const commits = e.payload?.commits || [];
+      msg = commits[commits.length-1]?.message?.slice(0,40) || '';
+    }
+    return `
+      <div class="activity-item" style="animation-delay:${i*0.06}s">
+        <span class="activity-type ${cls}">${label}</span>
+        <span class="activity-repo">${repo}</span>
+        ${msg ? `<span class="activity-msg">// ${msg}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  el.innerHTML = items || '<div class="error-msg">> NO RECENT ACTIVITY</div>';
+}
+
+function renderOrgs(orgs) {
+  const el = document.getElementById('orgs-panel');
+  if (!orgs.length) {
+    el.innerHTML = '<div style="font-size:0.7rem;color:var(--text-dim)">> NO ORGANIZATIONS DETECTED<br><br><span style="color:var(--green-dim)">// SOLO OPERATOR MODE ACTIVE</span></div>';
+    return;
+  }
+  el.innerHTML = orgs.map(o => `
+    <div style="display:flex;align-items:center;gap:0.6rem;padding:0.4rem 0;border-bottom:1px solid var(--border)">
+      <img src="${o.avatar_url}" style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border-bright)" loading="lazy">
+      <div>
+        <div style="font-size:0.75rem;color:var(--green)">${o.login}</div>
+        <div style="font-size:0.6rem;color:var(--text-dim)">MEMBER</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── ANIMATE MISSION BARS ───
+function animateMissionBars() {
+  document.querySelectorAll('.mission-fill').forEach(b => {
+    const pct = parseFloat(b.dataset.pct);
+    b.style.transform = `scaleX(${pct})`;
+  });
+}
+
+// ─── MAIN LOAD ───
+async function loadData() {
+  animateMissionBars();
+
+  const syncTime = new Date().toUTCString();
+  document.getElementById('last-sync').textContent = `SYNC: ${new Date().toUTCString().split(' ')[4]}`;
+  document.getElementById('footer-sync').textContent = syncTime;
+
+  try {
+    const [user, repos, orgs, events] = await Promise.all([
+      ghFetch(`/users/${USERNAME}`),
+      ghFetch(`/users/${USERNAME}/repos?per_page=100&sort=updated`),
+      ghFetch(`/users/${USERNAME}/orgs`),
+      ghFetch(`/users/${USERNAME}/events/public?per_page=30`),
+    ]);
+
+    renderIdentity(user, orgs);
+    renderStats(user, repos);
+    renderLangs(repos);
+    renderRepos(repos);
+    renderActivity(events);
+    renderOrgs(orgs);
+
+    // Update ticker with live data
+    const stars = repos.reduce((a,r) => a + r.stargazers_count, 0);
+    const ticker = document.getElementById('ticker');
+    const liveItems = [
+      `<span>LIVE</span>REPOS: ${user.public_repos}`,
+      `<span>LIVE</span>STARS: ${stars}`,
+      `<span>LIVE</span>FOLLOWERS: ${user.followers}`,
+    ];
+    liveItems.forEach(item => {
+      const el = document.createElement('span');
+      el.className = 'ticker-item';
+      el.innerHTML = item;
+      ticker.appendChild(el.cloneNode(true));
+      ticker.insertBefore(el, ticker.firstChild);
+    });
+
+  } catch (err) {
+    console.error('GitHub API error:', err);
+    ['identity-panel','stats-panel','lang-panel','repos-panel','activity-panel','orgs-panel'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el?.querySelector('.loading-pulse')) {
+        el.innerHTML = `<div class="error-msg">> API LIMIT REACHED — DATA UNAVAILABLE WITHOUT TOKEN<br><span style="color:var(--text-dim);font-size:0.6rem;margin-top:0.4rem;display:block">// GitHub API rate limits unauthenticated requests. Data shown may be stale.</span></div>`;
+      }
+    });
+  }
+}
+
+// Boot
+runBoot();
+</script>
+</body>
+</html>

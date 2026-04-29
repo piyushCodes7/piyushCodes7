@@ -1,0 +1,39 @@
+name: 🤖 Auto-Regenerate README
+
+on:
+  schedule:
+    # Runs every 6 hours
+    - cron: "0 */6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch: # manual trigger button in Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    name: Fetch Live Data & Rebuild README
+
+    steps:
+      - name: Checkout profile repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run README generator
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: python scripts/generate_readme.py
+
+      - name: Commit & push if changed
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "SYSTEM :: README BOT"
+          git add README.md
+          git diff --staged --quiet || git commit -m "🤖 [AUTO] README sync @ $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
