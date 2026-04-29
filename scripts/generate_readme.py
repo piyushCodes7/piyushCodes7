@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-PIYUSH_SHARMA :: README GENERATOR
-Fetches live GitHub data and regenerates README.md
-Runs via GitHub Actions on schedule + push
+PIYUSH_SHARMA :: README GENERATOR v2
+Visual language: Unix /proc /var/log dmesg lsmod journalctl
+NOT the generic ┌─┐ box-border cyberpunk style
+Auto-runs via GitHub Actions every 6 hours
 """
 
 import os
 import json
 import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 
 USERNAME = "piyushCodes7"
@@ -34,15 +34,12 @@ def fetch_user():
     return gh_get(f"https://api.github.com/users/{USERNAME}")
 
 def fetch_repos():
-    repos = []
-    page = 1
+    repos, page = [], 1
     while True:
         data = gh_get(f"https://api.github.com/users/{USERNAME}/repos?per_page=100&page={page}&sort=updated")
-        if not data:
-            break
+        if not data: break
         repos.extend(data)
-        if len(data) < 100:
-            break
+        if len(data) < 100: break
         page += 1
     return repos
 
@@ -50,279 +47,431 @@ def fetch_orgs():
     return gh_get(f"https://api.github.com/users/{USERNAME}/orgs") or []
 
 def fetch_events():
-    return gh_get(f"https://api.github.com/users/{USERNAME}/events/public?per_page=30") or []
-
-def fetch_pinned_via_api(repos):
-    sorted_repos = sorted(repos, key=lambda r: (r.get("stargazers_count",0) + r.get("forks_count",0)), reverse=True)
-    return sorted_repos[:4]
+    return gh_get(f"https://api.github.com/users/{USERNAME}/events/public?per_page=40") or []
 
 def compute_stats(repos):
-    total_stars = sum(r.get("stargazers_count", 0) for r in repos)
-    total_forks = sum(r.get("forks_count", 0) for r in repos)
-    total_repos = len(repos)
-    not_forked = [r for r in repos if not r.get("fork", True)]
-
+    stars = sum(r.get("stargazers_count", 0) for r in repos)
+    forks = sum(r.get("forks_count", 0) for r in repos)
+    og    = [r for r in repos if not r.get("fork")]
     langs = {}
     for r in repos:
         if r.get("language"):
             langs[r["language"]] = langs.get(r["language"], 0) + 1
-    top_langs = sorted(langs.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_langs = sorted(langs.items(), key=lambda x: x[1], reverse=True)[:8]
+    return {"stars": stars, "forks": forks, "original": len(og), "top_langs": top_langs}
 
-    return {
-        "stars": total_stars,
-        "forks": total_forks,
-        "total_repos": total_repos,
-        "original_repos": len(not_forked),
-        "top_langs": top_langs,
-    }
-
-def recent_activity(events):
-    lines = []
-    seen = set()
-    type_labels = {
-        "PushEvent": "PUSH  ",
-        "CreateEvent": "CREATE",
-        "WatchEvent": "STAR  ",
-        "ForkEvent": "FORK  ",
-        "IssuesEvent": "ISSUE ",
-        "PullRequestEvent": "PR    ",
-    }
-    for e in events:
-        t = e.get("type", "")
-        repo = e.get("repo", {}).get("name", "?").split("/")[-1]
-        key = f"{t}:{repo}"
-        if key in seen:
-            continue
-        seen.add(key)
-        label = type_labels.get(t, "EVENT ")
-        if t == "PushEvent":
-            msg = e.get("payload", {}).get("commits", [{}])[-1].get("message", "pushed code")[:45]
-            lines.append(f"  [{label}]  {repo[:25]:<25}  // {msg}")
-        elif t == "CreateEvent":
-            ref = e.get("payload", {}).get("ref", "new ref")[:30]
-            lines.append(f"  [{label}]  {repo[:25]:<25}  // {ref}")
-        else:
-            lines.append(f"  [{label}]  {repo[:25]:<25}")
-        if len(lines) >= 8:
-            break
-    return lines
-
-def bar(value, max_val, width=20):
-    filled = int((value / max(max_val, 1)) * width)
-    return "█" * filled + "░" * (width - filled)
-
-def lang_bar(count, max_count, width=14):
-    filled = int((count / max(max_count, 1)) * width)
+def pbar(val, max_val, width=10):
+    filled = int((val / max(max_val, 1)) * width)
     return "▓" * filled + "░" * (width - filled)
 
+def build_lsmod(stats):
+    skills = [
+        ("python",       "3.x",    "ACTIVE",       9),
+        ("c / c++",      "—",      "LOADED",        7),
+        ("javascript",   "ES6+",   "LOADED",        6),
+        ("html / css",   "5/3",    "LOADED",        6),
+        ("php",          "8.x",    "INSTALLED",     4),
+        ("fastapi",      "latest", "ACTIVE",        7),
+        ("flask",        "3.x",    "LOADED",        6),
+        ("numpy/pandas", "—",      "INSTALLING",    5),
+        ("sql / pl-sql", "—",      "INSTALLING",    4),
+        ("git",          "—",      "ACTIVE",        7),
+        ("machine_lrng", "—",      "COMPILING...",  3),
+    ]
+    lines = ["```"]
+    lines.append(f"  {'MODULE':<18} {'VER':<8} {'STATE':<14} PROFICIENCY")
+    lines.append("  " + "─" * 58)
+    for mod, ver, state, p in skills:
+        lines.append(f"  {mod:<18} {ver:<8} {state:<14} [{pbar(p,9)}]")
+
+    if stats["top_langs"]:
+        lines.append("")
+        lines.append(f"  {'LANG IN REPOS':<18} {'REPOS':<8} {'DISTRIBUTION'}")
+        lines.append("  " + "─" * 58)
+        max_lc = stats["top_langs"][0][1]
+        for lang, count in stats["top_langs"]:
+            lines.append(f"  {lang:<18} {count:<8} [{pbar(count, max_lc)}]")
+    lines.append("```")
+    return "\n".join(lines)
+
+def build_projects(repos):
+    hardcoded = [
+        {
+            "name": "HIMACHAL-AI-TOUR-GUIDE",
+            "match": ["himachal", "tour", "guide"],
+            "type": "AI-Powered Web Application",
+            "stack": "Python · Flask · AI/ML Integration",
+            "status": "DEPLOYED ✓",
+            "desc": [
+                "// TODO: ADD_DESCRIPTION",
+                "// What problem? Who is it for? What does it do?",
+                "// e.g. AI travel guide for Himachal Pradesh tourists",
+            ]
+        },
+        {
+            "name": "SENTINAI",
+            "match": ["sentinai", "sentin"],
+            "type": "Android ML Network Security System",
+            "stack": "Python · Android Java · ONNX · Liquid CfC Neural Nets",
+            "status": "HACKATHON BUILD ✓  [NIT Hamirpur]",
+            "desc": [
+                "// TODO: ADD_DESCRIPTION",
+                "// Core: Biometric Traffic Entanglement",
+                "// Detects: SAFE · C2_BEACON · AI_MIMICRY · DATA_EXFIL",
+            ]
+        },
+        {
+            "name": "ASHA-VANI",
+            "match": ["asha", "vani", "ashavani"],
+            "type": "3-Stage Voice Assistant Pipeline",
+            "stack": "Python · STT · Inference Engine · TTS",
+            "status": "IN PROGRESS ⚡",
+            "desc": [
+                "// TODO: ADD_DESCRIPTION",
+                "// Pipeline: listen_once() → infer() → speak()",
+            ]
+        },
+        {
+            "name": "LARVI",
+            "match": ["larvi"],
+            "type": "[CLASSIFIED]",
+            "stack": "—",
+            "status": "EARLY BUILD ⚡",
+            "desc": [
+                "// TODO: ADD_DESCRIPTION when ready",
+            ]
+        },
+    ]
+
+    # try to match live repo data
+    live_map = {}
+    for r in repos:
+        rname = r["name"].lower().replace("-","").replace("_","")
+        live_map[rname] = r
+
+    blocks = []
+    shown_repos = set()
+
+    for i, proj in enumerate(hardcoded):
+        live = {}
+        for keyword in proj["match"]:
+            for key, r in live_map.items():
+                if keyword in key:
+                    live = r
+                    shown_repos.add(r["name"])
+                    break
+            if live:
+                break
+
+        stars   = live.get("stargazers_count", 0)
+        forks   = live.get("forks_count", 0)
+        updated = live.get("updated_at", "")[:10] or "—"
+        url     = live.get("html_url", f"github.com/{USERNAME}")
+        status  = "ARCHIVED" if live.get("archived") else proj["status"]
+
+        block = [f'**`[JOB_{i+1:02d}]`** &nbsp;**{proj["name"]}**', "```"]
+        block.append(f'  TYPE    :  {proj["type"]}')
+        block.append(f'  STACK   :  {proj["stack"]}')
+        block.append(f'  STATUS  :  {status}')
+        if stars or forks:
+            block.append(f'  METRICS :  ★ {stars}  ·  ⑂ {forks}  ·  updated {updated}')
+        block.append(f'  REPO    :  {url}')
+        for d in proj["desc"]:
+            block.append(f'  {d}')
+        block.append("```")
+        blocks.append("\n".join(block))
+
+    # extra live repos not in hardcoded
+    extras = [r for r in repos if not r.get("fork") and r["name"] not in shown_repos]
+    extras = sorted(extras, key=lambda r: r.get("stargazers_count",0), reverse=True)[:2]
+    for i, r in enumerate(extras):
+        desc = (r.get("description") or "// No description yet")[:65]
+        block = [
+            f'**`[JOB_{len(hardcoded)+i+1:02d}]`** &nbsp;**{r["name"].upper()}**',
+            "```",
+            f'  TYPE    :  Repository',
+            f'  STACK   :  {r.get("language") or "?"}',
+            f'  STATUS  :  {"ARCHIVED" if r.get("archived") else "ACTIVE"}',
+            f'  METRICS :  ★ {r.get("stargazers_count",0)}  ·  ⑂ {r.get("forks_count",0)}  ·  updated {r.get("updated_at","")[:10]}',
+            f'  REPO    :  {r.get("html_url","#")}',
+            f'  // {desc}',
+            "```"
+        ]
+        blocks.append("\n".join(block))
+
+    return "\n\n".join(blocks)
+
+def build_activity(events):
+    labels = {
+        "PushEvent":        "[  PUSH  ]",
+        "CreateEvent":      "[ CREATE ]",
+        "WatchEvent":       "[ STARRED]",
+        "ForkEvent":        "[  FORK  ]",
+        "PullRequestEvent": "[   PR   ]",
+        "IssuesEvent":      "[ ISSUE  ]",
+        "DeleteEvent":      "[ DELETE ]",
+        "ReleaseEvent":     "[RELEASE ]",
+    }
+    lines, seen = [], set()
+    for e in events:
+        t    = e.get("type","")
+        repo = e.get("repo",{}).get("name","?").split("/")[-1]
+        key  = f"{t}:{repo}"
+        if key in seen: continue
+        seen.add(key)
+        label = labels.get(t, "[  EVENT ]")
+
+        if t == "PushEvent":
+            commits = e.get("payload",{}).get("commits",[])
+            msg = (commits[-1].get("message","pushed") if commits else "pushed").split("\n")[0][:42]
+            lines.append(f"  {label}  {repo:<22}  {msg}")
+        elif t == "CreateEvent":
+            ref = (e.get("payload",{}).get("ref") or "new ref")[:28]
+            lines.append(f"  {label}  {repo:<22}  created {ref}")
+        else:
+            lines.append(f"  {label}  {repo:<22}")
+        if len(lines) >= 10: break
+
+    return "\n".join(lines) if lines else "  [  IDLE  ]  no recent public events"
+
+def build_orgs(orgs):
+    if not orgs:
+        return (
+            "  // No public org memberships detected\n"
+            "  // To show orgs: GitHub → Org Settings → Member visibility → Public"
+        )
+    return "\n".join(
+        f"  [{o['login']:<25}]  →  github.com/{o['login']}" for o in orgs
+    )
+
 def generate_readme(user, repos, orgs, events):
-    stats = compute_stats(repos)
-    activity = recent_activity(events)
-    pinned = fetch_pinned_via_api(repos)
+    stats   = compute_stats(repos)
+    now     = datetime.now(timezone.utc)
+    ts      = now.strftime("%Y-%m-%d %H:%M UTC")
 
-    now = datetime.now(timezone.utc)
-    timestamp = now.strftime("%Y-%m-%d %H:%M UTC")
-
-    score = min(99, stats["total_repos"] * 2 + stats["stars"] * 5 + stats["forks"] * 3)
-    threat_bar = bar(score, 100, 20)
-
-    name = (user.get("name") or USERNAME)[:30]
-    bio = (user.get("bio") or "Building. Learning. Becoming.")[:50]
     followers = user.get("followers", 0)
     following = user.get("following", 0)
-    public_repos = user.get("public_repos", 0)
-    created = user.get("created_at", "")[:4]
+    pub_repos = user.get("public_repos", 0)
+    created   = user.get("created_at","")[:4]
 
-    org_names = [o.get("login", "") for o in orgs]
-    org_str = (", ".join(org_names) if org_names else "NONE DETECTED")[:40]
+    try:
+        created_dt  = datetime.fromisoformat(user.get("created_at","").replace("Z","+00:00"))
+        days_active = (now - created_dt).days
+    except:
+        days_active = "—"
 
-    # Language bars — simple table rows, no box borders
-    max_lang_count = stats["top_langs"][0][1] if stats["top_langs"] else 1
-    lang_lines = []
-    for lang, count in stats["top_langs"]:
-        lb = lang_bar(count, max_lang_count)
-        lang_lines.append(f"  {lang:<16} [{lb}]  {count} repo{'s' if count != 1 else ''}")
-    lang_block = "\n".join(lang_lines) if lang_lines else "  NO LANGUAGE DATA"
+    kernel_v  = f"{created}.{pub_repos}.{followers}-piyush"
 
-    # Project mission blocks
-    mission_blocks = []
-    for i, r in enumerate(pinned[:4]):
-        rname = r.get("name", "UNKNOWN")[:35]
-        desc = (r.get("description") or "No description logged.")[:55]
-        lang = r.get("language") or "?"
-        stars = r.get("stargazers_count", 0)
-        forks = r.get("forks_count", 0)
-        updated = r.get("updated_at", "")[:10]
-        status = "ARCHIVED" if r.get("archived") else "ACTIVE"
-        url = r.get("html_url", "#")
-        mission_blocks.append(
-f"""  MISSION_{i+1:02d}  >>  {rname.upper()}
-  STATUS      :  [{status}]
-  DESC        :  {desc}
-  STACK       :  {lang}  |  STARS {stars}  |  FORKS {forks}
-  UPDATED     :  {updated}
-  LINK        :  {url}
-  {"─" * 60}"""
-        )
-    missions_str = "\n\n".join(mission_blocks) if mission_blocks else "  NO MISSIONS LOGGED YET."
+    lsmod_block    = build_lsmod(stats)
+    project_block  = build_projects(repos)
+    activity_block = build_activity(events)
+    org_block      = build_orgs(orgs)
 
-    activity_str = "\n".join(activity) if activity else "  > NO RECENT ACTIVITY DETECTED"
-
-    readme = f"""<!-- AUTO-GENERATED @ {timestamp} | DO NOT EDIT MANUALLY -->
+    return f"""<!-- AUTO-GENERATED @ {ts} — DO NOT EDIT MANUALLY -->
+<!-- Visual language: Unix system internals (/proc /var/log dmesg lsmod) -->
 
 <div align="center">
 
-```
- ██████╗ ██╗██╗   ██╗██╗   ██╗███████╗██╗  ██╗
- ██╔══██╗██║╚██╗ ██╔╝██║   ██║██╔════╝██║  ██║
- ██████╔╝██║ ╚████╔╝ ██║   ██║███████╗███████║
- ██╔═══╝ ██║  ╚██╔╝  ██║   ██║╚════██║██╔══██║
- ██║     ██║   ██║   ╚██████╔╝███████║██║  ██║
- ╚═╝     ╚═╝   ╚═╝    ╚═════╝ ╚══════╝╚═╝  ╚═╝
-              piyushCodes7 :: SYSTEM ONLINE
-```
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=30&duration=1&pause=99999&color=00FF41&center=true&vCenter=true&width=600&height=65&lines=PIYUSH+SHARMA)](https://git.io/typing-svg)
 
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&size=13&duration=2000&pause=700&color=00FF41&center=true&vCenter=true&multiline=true&repeat=true&width=680&height=80&lines=%3E+OPERATOR%3A+PIYUSH+SHARMA+%7C+NODE%3A+piyushCodes7;%3E+REPOS%3A+{public_repos}+%7C+FOLLOWERS%3A+{followers}+%7C+BUILDING+SINCE+{created};%3E+STATUS%3A+ONLINE+%7C+LEARNING+%7C+BECOMING)](https://git.io/typing-svg)
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&size=13&duration=2500&pause=900&color=00FF41&center=true&vCenter=true&multiline=true&repeat=true&width=700&height=65&lines=%24+whoami+%3A%3A+Backend+Engineer+%7C+AI%2FML+Student+%7C+Builder;%24+uptime+%3A%3A+{days_active}+days+%7C+{pub_repos}+repos+%7C+{followers}+followers)](https://git.io/typing-svg)
 
 </div>
 
 ---
 
-## `> whoami`
-
 ```
-  OPERATOR    : {name}
-  HANDLE      : @{USERNAME}
-  ORIGIN      : {created} — STILL RUNNING
-  FOLLOWERS   : {followers}   FOLLOWING : {following}   REPOS : {public_repos}
-  ORGS        : {org_str}
-  BIO         : {bio}
-  THREAT LVL  : [{threat_bar}] {score}%
-  UPTIME      : AMBITION.EXE — NOT STOPPING
-  LAST SYNC   : {timestamp}
-```
+════════════════════════════════════════════════════════════
+  /var/log/piyush/identity.log          [{ts}]
+════════════════════════════════════════════════════════════
 
----
+  $ id
+  uid=7({USERNAME})  groups=backend,ai-ml,builder,student
 
-## `> cat /sys/stats/live_feed.dat`
+  $ uname -a
+  HUMAN piyush {kernel_v} BE-CSE-AIML Chitkara-Uni aarch64
 
-```
-  GITHUB TELEMETRY                      [ LIVE PULL ]
-  ════════════════════════════════════════════════════
+  $ uptime
+  {days_active} days since init.  no planned downtime.
 
-  TOTAL REPOS   : {public_repos:<5}   ORIGINAL    : {stats["original_repos"]}
-  TOTAL STARS   : {stats["stars"]:<5}   TOTAL FORKS : {stats["forks"]}
-  FOLLOWERS     : {followers:<5}   FOLLOWING   : {following}
+  $ cat /proc/location
+  CURRENT  →  Rajpura, Punjab, IN
+  ORIGIN   →  Bilaspur, Himachal Pradesh, IN
 
-  LANGUAGE DISTRIBUTION
-  ────────────────────────────────────────────────────
-{lang_block}
+  $ cat /proc/stats
+  REPOS     →  {pub_repos} total  ({stats["original"]} original)
+  STARS     →  {stats["stars"]} earned  ·  FORKS: {stats["forks"]}
+  FOLLOWERS →  {followers}  ·  FOLLOWING: {following}
+  JOINED    →  {created}
+
+════════════════════════════════════════════════════════════
 ```
 
 <div align="center">
 
-![GitHub Stats](https://github-readme-stats.vercel.app/api?username={USERNAME}&show_icons=true&theme=chartreuse-dark&border_color=00FF41&title_color=00FF41&icon_color=00FF41&text_color=c9d1d9&bg_color=0d1117&hide_border=false&rank_icon=github&count_private=true)
-
-![GitHub Streak](https://streak-stats.demolab.com?user={USERNAME}&theme=dark&border=00FF41&ring=00FF41&fire=FF6B35&currStreakLabel=00FF41&sideLabels=00FF41&dates=8b949e&background=0d1117)
+`BE CSE (AI/ML)` &nbsp;·&nbsp; `Chitkara University` &nbsp;·&nbsp; `2025–2029` &nbsp;·&nbsp; `CGPA: 9.6`
 
 </div>
 
 ---
 
-## `> tail -f /var/log/projects/mission_log`
+## `$ diff /dev/null /dev/me`
 
-```
-  ACTIVE DEPLOYMENTS :: LIVE FROM GITHUB API
-  ════════════════════════════════════════════════════════════
+> First-year undergrad. Not an expert — actively becoming one.
+> Backend is my home: APIs, pipelines, system logic.
+> Frontend? I speak it. Full-time? Not my dialect.
+> Currently compiling: **Python → FastAPI → ML → whatever breaks next.**
 
-{missions_str}
-```
-
----
-
-## `> journalctl --recent -n 8`
-
-```
-  RECENT ACTIVITY                       [ AUTO-FETCHED ]
-  ════════════════════════════════════════════════════════════
-
-{activity_str}
-```
-
----
-
-## `> ps aux | grep current_mission`
-
-```
-  PROCESS                              STATUS
-  ─────────────────────────────────────────────────────────
-  python_mastery.exe                   RUNNING
-  dsa_grind.daemon                     RUNNING
-  machine_learning.service             INSTALLING...
-  project_shipping.exe                 RUNNING
-  ambition_core.sys                    MAX PRIORITY
-
-  OBJECTIVE  : High-impact developer role
-  APPROACH   : Build real things. Learn relentlessly.
-  README     : Auto-regenerated every 6h by GitHub Actions
+```python
+class PiyushSharma:
+    role      = "Backend Engineer"
+    studying  = "AI/ML Engineering @ Chitkara University"
+    year      = "1st Year (2025–2029)"
+    cgpa      = 9.6
+    stack     = ["Python", "FastAPI", "Flask", "C", "C++",
+                 "JavaScript", "HTML/CSS", "PHP", "SQL/PL-SQL",
+                 "NumPy", "Pandas"]
+    currently = ["building real projects", "grinding DSA",
+                 "learning ML fundamentals", "shipping > perfecting"]
+    goal      = "high-impact developer role — no shortcuts"
+    mantra    = "ship it. break it. learn. ship again."
+    uptime    = "{days_active} days"
 ```
 
 ---
 
-## `> ping connection_endpoints`
+## `$ lsmod | grep skills --all`
+
+{lsmod_block}
+
+---
+
+## `$ journalctl --unit=projects --no-pager`
 
 ```
-  ENDPOINT          TARGET                          STATUS
-  ─────────────────────────────────────────────────────────
-  [GITHUB]          github.com/{USERNAME:<22}  200 OK
-  [DASHBOARD]       piyushcodes7.vercel.app         LIVE
-  [CONTACT]         open an issue to connect        OPEN
+════════════════════════════════════════════════════════════
+  PROJECT LOG :: live-pulled from github api @ {ts}
+════════════════════════════════════════════════════════════
+```
+
+{project_block}
+
+---
+
+## `$ dmesg | tail -n 10`
+
+```
+════════════════════════════════════════════════════════════
+  KERNEL EVENT LOG :: {USERNAME}          [LIVE FEED]
+════════════════════════════════════════════════════════════
+
+{activity_block}
+
+════════════════════════════════════════════════════════════
+```
+
+---
+
+## `$ cat /proc/achievements`
+
+```
+════════════════════════════════════════════════════════════
+  ACHIEVEMENT REGISTRY
+════════════════════════════════════════════════════════════
+
+  ACADEMIC
+  ─────────────────────────────────────────────────────
+  CGPA  9.6 / 10  @  Chitkara University  (Sem 1)
+  STATUS  →  semester_1.exe  returned 0  [SUCCESS]
+
+  HACKATHONS
+  ─────────────────────────────────────────────────────
+  // TODO: ADD → "Name | Role | Year | Result"
+  // SentinAI | Builder | 2025 | NIT Hamirpur
+
+  CERTIFICATIONS
+  ─────────────────────────────────────────────────────
+  // TODO: ADD → "Course | Platform | Year | Status"
+
+════════════════════════════════════════════════════════════
+```
+
+---
+
+## `$ cat /sys/class/net/orgs`
+
+```
+{org_block}
+```
+
+---
+
+## `$ ping --all connection_endpoints`
+
+```
+════════════════════════════════════════════════════════════
+  NETWORK SCAN :: {USERNAME}
+════════════════════════════════════════════════════════════
+
+  github      →  github.com/{USERNAME:<22}  [200 OK]
+  linkedin    →  linkedin.com/in/{USERNAME:<16}  [200 OK]
+  leetcode    →  leetcode.com/{USERNAME:<22}  [200 OK]
+  codeforces  →  codeforces.com/{USERNAME:<20}  [200 OK]
+  kaggle      →  kaggle.com/{USERNAME:<24}  [200 OK]
+  email       →  sharmapiyush74860@gmail.com        [OPEN]
+
+  LATENCY: <24h  |  RESPONSE_RATE: 100%  |  SPAM: FILTERED
+
+════════════════════════════════════════════════════════════
 ```
 
 ---
 
 <div align="center">
 
-```
-  ─────────────────────────────────────────────────────────
-  [SYS]  This README regenerates itself every 6 hours.
-  [SYS]  Real repos. Real commits. Real data. No fluff.
-  [SYS]  Not where I want to be yet. Building there.
-  [SYS]  Last sync: {timestamp}
-  ─────────────────────────────────────────────────────────
-```
+![GitHub Stats](https://github-readme-stats.vercel.app/api?username={USERNAME}&show_icons=true&theme=chartreuse-dark&border_color=00FF41&title_color=00FF41&icon_color=00FF41&text_color=c9d1d9&bg_color=0d1117&rank_icon=github&count_private=true)
 
-![Visitor Count](https://komarev.com/ghpvc/?username={USERNAME}&color=00ff41&style=flat-square&label=NODES+CONNECTED)
+![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username={USERNAME}&layout=compact&theme=chartreuse-dark&border_color=00FF41&title_color=00FF41&text_color=c9d1d9&bg_color=0d1117)
 
-```
-[ END OF TRANSMISSION ]  ///  piyush_sharma.exe — still running
-```
+![Streak](https://streak-stats.demolab.com?user={USERNAME}&theme=dark&border=00FF41&ring=00FF41&fire=FF6B35&currStreakLabel=00FF41&sideLabels=00FF41&dates=8b949e&background=0d1117)
+
+![Visitor Count](https://komarev.com/ghpvc/?username={USERNAME}&color=00ff41&style=flat-square&label=profile+views)
 
 </div>
+
+---
+
+```
+════════════════════════════════════════════════════════════
+  $ exit --graceful
+
+  [LOG]  not an expert. not pretending to be one.
+  [LOG]  first year. 9.6 cgpa. building real things.
+  [LOG]  every commit is a diff from who i was yesterday.
+  [LOG]  {ts}  process still running in background.
+
+  connection closed by remote host.
+  piyush_sharma.exe  —  alive.
+════════════════════════════════════════════════════════════
+```
 """
-    return readme
 
 def main():
-    print("[BOOT] Starting README generation...")
+    print("[BOOT] README generator v2 starting...")
     user = fetch_user()
     if not user:
-        print("[ERROR] Could not fetch user data. Check GH_TOKEN.")
+        print("[ERROR] Could not fetch user. Check GH_TOKEN.")
         return
 
-    print(f"[OK] User: {user.get('login')}")
-    repos = fetch_repos()
-    print(f"[OK] Repos: {len(repos)}")
-    orgs = fetch_orgs()
-    print(f"[OK] Orgs: {len(orgs)}")
-    events = fetch_events()
-    print(f"[OK] Events: {len(events)}")
+    print(f"[OK] User   : {user.get('login')}")
+    repos  = fetch_repos();  print(f"[OK] Repos  : {len(repos)}")
+    orgs   = fetch_orgs();   print(f"[OK] Orgs   : {len(orgs)}")
+    events = fetch_events(); print(f"[OK] Events : {len(events)}")
 
     readme = generate_readme(user, repos, orgs, events)
-
     with open("README.md", "w", encoding="utf-8") as f:
         f.write(readme)
-
-    print("[DONE] README.md regenerated successfully.")
+    print("[DONE] README.md regenerated.")
 
 if __name__ == "__main__":
     main()
