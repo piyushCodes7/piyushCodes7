@@ -1,10 +1,8 @@
 <div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=000000&height=250&section=header&text=Piyush%20Sharma&fontSize=80&fontColor=ffffff&animation=fadeIn&fontAlignY=35" width="100%" />
-  
-  <h3 align="center">Backend Engineer & AI/ML Student</h3>
+  <img src="https://readme-typing-svg.demolab.com?font=Orbitron&weight=900&size=65&duration=2500&pause=500&color=00FF41&center=true&vCenter=true&width=800&height=120&lines=PIYUSH+SHARMA;BACKEND+ENGINEER;AI%2FML+DEVELOPER;INNOVATOR" alt="Piyush Sharma" />
   
   <p align="center">
-    Building intelligent systems, scalable APIs, and exploring the depths of machine learning.
+    <b>Building intelligent systems, scalable APIs, and exploring the depths of machine learning.</b>
     <br />
     <i>BE CSE (AI/ML) @ Chitkara University | CGPA: 9.6</i>
   </p>
@@ -68,17 +66,14 @@
 ## 📊 GitHub Analytics
 
 <div align="center">
-  <img src="https://github-readme-stats.vercel.app/api?username=piyushCodes7&show_icons=true&theme=radical&rank_icon=github&count_private=true" width="48%" />
-  <img src="https://github-readme-streak-stats.herokuapp.com/?user=piyushCodes7&theme=radical" width="48%" />
-</div>
-<br>
-<div align="center">
-  <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=piyushCodes7&layout=compact&theme=radical" width="48%" />
-</div>
 
-<br>
-<div align="center">
-  <img src="https://komarev.com/ghpvc/?username=piyushCodes7&color=blueviolet&style=for-the-badge&label=PROFILE+VIEWS" />
+[![GitHub Stats](https://github-readme-stats.vercel.app/api?username=piyushCodes7&show_icons=true&theme=tokyonight&rank_icon=github&count_private=true)](https://github.com/piyushCodes7)
+[![GitHub Streak](https://github-readme-streak-stats.herokuapp.com/?user=piyushCodes7&theme=tokyonight)](https://github.com/piyushCodes7)
+<br><br>
+[![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username=piyushCodes7&layout=compact&theme=tokyonight)](https://github.com/piyushCodes7)
+<br><br>
+[![Profile Views](https://komarev.com/ghpvc/?username=piyushCodes7&color=00FF41&style=for-the-badge&label=PROFILE+VIEWS)](https://github.com/piyushCodes7)
+
 </div>
 
 <div align="center">
