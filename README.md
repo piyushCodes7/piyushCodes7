@@ -1,3 +1,5 @@
+<!-- AUTO-GENERATED @ 2026-07-28 21:05 UTC — DO NOT EDIT MANUALLY -->
+
 <div align="center">
   <img src="https://readme-typing-svg.demolab.com?font=Orbitron&weight=900&size=65&duration=2500&pause=500&color=00FF41&center=true&vCenter=true&width=800&height=120&lines=PIYUSH+SHARMA;BACKEND+ENGINEER;AI%2FML+DEVELOPER;INNOVATOR" alt="Piyush Sharma" />
   
@@ -56,10 +58,20 @@
 
 | Project | Description | Tech Stack | Status |
 | :--- | :--- | :--- | :--- |
-| **[Himachal AI Tour Guide](https://github.com/piyushCodes7/Himachal-tour-guide)** | AI-Powered travel guide web application for tourists in Himachal Pradesh. | Python, Flask, AI/ML | 🟢 Deployed |
-| **SentinAI** | Android ML Network Security System with Biometric Traffic Entanglement. | Python, Android, ONNX, Liquid CfC | 🏆 Hackathon |
-| **[ASHA-VANI](https://github.com/piyushCodes7/ASHA_VANI)** | 3-Stage Voice Assistant Pipeline (STT → Inference → TTS). | Python, ML | ⚡ In Progress |
+| **[Himachal AI Tour Guide](https://github.com/piyushCodes7/Himachal-tour-guide)** ⭐ 1 | AI-Powered travel guide web application for tourists in Himachal Pradesh. | Python, Flask, AI/ML | 🟢 Deployed |
+| **[SentinAI](https://github.com/piyushCodes7)** | Android ML Network Security System with Biometric Traffic Entanglement. | Python, Android, ONNX, Liquid CfC | 🏆 Hackathon |
+| **[ASHA-VANI](https://github.com/piyushCodes7/ASHA_VANI)** ⭐ 1 | 3-Stage Voice Assistant Pipeline (STT → Inference → TTS). | Python, ML | ⚡ In Progress |
 | **[LARVI](https://github.com/piyushCodes7)** | Classified Early Build | — | ⚡ Early Build |
+| **[piyushCodes7](https://github.com/piyushCodes7/piyushCodes7)** ⭐ 1 | Repository | HTML | 🟢 Active |
+| **[TodoProject](https://github.com/piyushCodes7/TodoProject)** | Repository | JavaScript | 🟢 Active |
+
+---
+
+## ⚡ Recent Activity
+
+- 🚀 Pushed to **piyushCodes7**
+- 🚀 Pushed to **TodoProject**
+- 🎉 Created **TodoProject**
 
 ---
 
