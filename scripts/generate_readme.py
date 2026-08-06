@@ -1,247 +1,364 @@
 #!/usr/bin/env python3
 """
-PIYUSH_SHARMA :: README GENERATOR v4 (Elite Engineer Layout)
-Auto-runs via GitHub Actions every 6 hours
+generate_readme.py — live GitHub stats -> README.md
+
+Fetches profile stats (repos, stars, forks, followers, contribution streaks,
+top languages) from the GitHub GraphQL API and writes them into README.md
+between two HTML marker comments:
+
+    <!-- STATS:START -->
+    ...generated content...
+    <!-- STATS:END -->
+
+Everything outside the markers (bio, project list, animated SVG embeds,
+contact info, ...) is left untouched, so this is safe to run on a 6-hour
+cron in GitHub Actions without clobbering hand-written sections.
+
+Usage:
+    python generate_readme.py --username piyushCodes7
+
+Auth:
+    Needs a token with `read:user` scope (classic PAT is fine, it's free):
+    GitHub -> Settings -> Developer settings -> Personal access tokens ->
+    Tokens (classic) -> Generate new token -> check `read:user` (and
+    `public_repo` if you want private-repo language stats too).
+    Store it as a repo secret (e.g. README_TOKEN) and export it as
+    GH_README_TOKEN, or pass --token directly.
+
+Exit codes:
+    0  success (README unchanged or updated)
+    1  fetch/auth/render failure
 """
 
+from __future__ import annotations
+
+import argparse
+import logging
 import os
-import json
-import urllib.request
+import re
+import sys
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-USERNAME = "piyushCodes7"
-TOKEN = os.environ.get("GH_TOKEN", "")
+import requests
 
-HEADERS = {
-    "Authorization": f"Bearer {TOKEN}" if TOKEN else "",
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "piyushCodes7-readme-generator"
+GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
+MAX_RETRIES = 3
+RETRY_BACKOFF_SECONDS = 2.0
+
+MARKER_START = "<!-- STATS:START -->"
+MARKER_END = "<!-- STATS:END -->"
+
+# Filenames this script will link to if found in --svg-dir, matching the
+# animated-terminal SVG set (glitch title / boot sequence / skill bars /
+# activity feed). Missing files are silently skipped so a broken pipeline
+# never means a broken README.
+SVG_ASSETS = {
+    "glitch": "glitch-title.svg",
+    "boot": "boot-sequence.svg",
+    "skills": "skill-bars.svg",
+    "activity": "activity-feed.svg",
 }
-if not TOKEN:
-    del HEADERS["Authorization"]
 
-def gh_get(url):
-    req = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
-    except Exception as e:
-        print(f"[WARN] Failed: {url} → {e}")
-        return None
-
-def fetch_user():
-    return gh_get(f"https://api.github.com/users/{USERNAME}")
-
-def fetch_repos():
-    repos, page = [], 1
-    while True:
-        data = gh_get(f"https://api.github.com/users/{USERNAME}/repos?per_page=100&page={page}&sort=updated")
-        if not data: break
-        repos.extend(data)
-        if len(data) < 100: break
-        page += 1
-    return repos
-
-def fetch_events():
-    return gh_get(f"https://api.github.com/users/{USERNAME}/events/public?per_page=40") or []
-
-def build_projects(repos):
-    hardcoded = [
-        {
-            "name": "Himachal AI Tour Guide",
-            "match": ["himachal", "tour", "guide"],
-            "stack": "Python, Flask, AI/ML",
-            "status": "Production",
-            "desc": "AI-Powered travel guide web application for tourists in Himachal Pradesh."
-        },
-        {
-            "name": "SentinAI",
-            "match": ["sentinai", "sentin"],
-            "stack": "Python, Android, ONNX",
-            "status": "Hackathon Build",
-            "desc": "Android ML Network Security System with Biometric Traffic Entanglement."
-        },
-        {
-            "name": "ASHA-VANI",
-            "match": ["asha", "vani", "ashavani"],
-            "stack": "Python, ML",
-            "status": "In Progress",
-            "desc": "3-Stage Voice Assistant Pipeline (STT → Inference → TTS)."
+PROFILE_QUERY = """
+query($login: String!) {
+  user(login: $login) {
+    followers { totalCount }
+    repositories(first: 100, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC) {
+      totalCount
+      nodes {
+        stargazerCount
+        forkCount
+        languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+          edges { size node { name color } }
         }
+      }
+    }
+    contributionsCollection {
+      contributionCalendar {
+        totalContributions
+        weeks { contributionDays { date contributionCount } }
+      }
+    }
+  }
+}
+"""
+
+logger = logging.getLogger("generate_readme")
+
+
+class GitHubAPIError(RuntimeError):
+    """Raised on a well-formed but unsuccessful GraphQL response."""
+
+
+@dataclass
+class LanguageStat:
+    name: str
+    bytes_: int
+    color: str | None = None
+
+
+@dataclass
+class ProfileStats:
+    username: str
+    public_repos: int
+    total_stars: int
+    total_forks: int
+    followers: int
+    contributions_last_year: int
+    current_streak: int
+    longest_streak: int
+    top_languages: list[LanguageStat] = field(default_factory=list)
+    total_language_bytes: int = 0
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class GitHubClient:
+    """Thin GraphQL client with retry/backoff for transient failures."""
+
+    def __init__(self, token: str, timeout: float = 15.0) -> None:
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "Authorization": f"bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "generate-readme-script",
+            }
+        )
+        self.timeout = timeout
+
+    def fetch_profile_data(self, username: str) -> dict[str, Any]:
+        return self._graphql(PROFILE_QUERY, {"login": username})
+
+    def _graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = self.session.post(
+                    GITHUB_GRAPHQL_URL,
+                    json={"query": query, "variables": variables},
+                    timeout=self.timeout,
+                )
+                if response.status_code in (502, 503, 504):
+                    raise GitHubAPIError(f"transient {response.status_code} from GitHub")
+                response.raise_for_status()
+
+                payload = response.json()
+                if "errors" in payload and payload["errors"]:
+                    raise GitHubAPIError("; ".join(e.get("message", "?") for e in payload["errors"]))
+                if not payload.get("data", {}).get("user"):
+                    raise GitHubAPIError("user not found or token lacks read:user scope")
+                return payload["data"]
+
+            except (requests.RequestException, GitHubAPIError) as exc:
+                last_error = exc
+                if attempt == MAX_RETRIES:
+                    break
+                wait = RETRY_BACKOFF_SECONDS * attempt
+                logger.warning("GraphQL attempt %d/%d failed (%s), retrying in %.1fs", attempt, MAX_RETRIES, exc, wait)
+                time.sleep(wait)
+
+        raise GitHubAPIError(f"GitHub API request failed after {MAX_RETRIES} attempts: {last_error}")
+
+
+class StatsAggregator:
+    """Pure functions turning raw GraphQL payloads into ProfileStats fields."""
+
+    @staticmethod
+    def compute_streaks(days: list[dict[str, Any]]) -> tuple[int, int]:
+        if not days:
+            return 0, 0
+
+        today = datetime.now(timezone.utc).date()
+        parsed = sorted(
+            ((datetime.fromisoformat(d["date"]).date(), d["contributionCount"]) for d in days),
+            key=lambda item: item[0],
+        )
+
+        longest = running = 0
+        for _, count in parsed:
+            running = running + 1 if count > 0 else 0
+            longest = max(longest, running)
+
+        current = 0
+        for date_, count in reversed(parsed):
+            if date_ == today and count == 0:
+                continue  # today isn't over yet, don't let it break the streak
+            if count > 0:
+                current += 1
+            else:
+                break
+
+        return current, longest
+
+    @staticmethod
+    def aggregate_languages(
+        repo_nodes: list[dict[str, Any]], exclude: set[str] | None = None
+    ) -> tuple[list[LanguageStat], int]:
+        exclude = exclude or set()
+        totals: dict[str, LanguageStat] = {}
+
+        for repo in repo_nodes:
+            for edge in repo.get("languages", {}).get("edges", []):
+                name = edge["node"]["name"]
+                if name in exclude:
+                    continue
+                if name in totals:
+                    totals[name].bytes_ += edge["size"]
+                else:
+                    totals[name] = LanguageStat(name=name, bytes_=edge["size"], color=edge["node"].get("color"))
+
+        ranked = sorted(totals.values(), key=lambda lang: lang.bytes_, reverse=True)
+        total_bytes = sum(lang.bytes_ for lang in ranked)
+        return ranked, total_bytes
+
+
+def build_stats(data: dict[str, Any], username: str, top_n: int, exclude_languages: set[str]) -> ProfileStats:
+    user = data["user"]
+    repos = user["repositories"]["nodes"]
+    calendar = user["contributionsCollection"]["contributionCalendar"]
+    days = [d for week in calendar["weeks"] for d in week["contributionDays"]]
+
+    current_streak, longest_streak = StatsAggregator.compute_streaks(days)
+    languages, total_bytes = StatsAggregator.aggregate_languages(repos, exclude_languages)
+
+    return ProfileStats(
+        username=username,
+        public_repos=user["repositories"]["totalCount"],
+        total_stars=sum(r["stargazerCount"] for r in repos),
+        total_forks=sum(r["forkCount"] for r in repos),
+        followers=user["followers"]["totalCount"],
+        contributions_last_year=calendar["totalContributions"],
+        current_streak=current_streak,
+        longest_streak=longest_streak,
+        top_languages=languages[:top_n],
+        total_language_bytes=total_bytes,
+    )
+
+
+def _bar(pct: float, width: int = 20) -> str:
+    filled = round(width * pct / 100)
+    return "█" * filled + "░" * (width - filled)
+
+
+def render_stats_block(stats: ProfileStats, svg_dir: Path) -> str:
+    lines: list[str] = [MARKER_START, ""]
+
+    for label, filename in SVG_ASSETS.items():
+        if (svg_dir / filename).exists():
+            lines.append(f'<img src="{svg_dir.as_posix()}/{filename}" alt="{label}" />')
+            lines.append("")
+
+    lines += [
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Public repos | {stats.public_repos} |",
+        f"| Total stars | {stats.total_stars} |",
+        f"| Total forks | {stats.total_forks} |",
+        f"| Followers | {stats.followers} |",
+        f"| Contributions (past year) | {stats.contributions_last_year} |",
+        f"| Current streak | {stats.current_streak} day(s) |",
+        f"| Longest streak | {stats.longest_streak} day(s) |",
+        "",
     ]
 
-    live_map = {}
-    for r in repos:
-        rname = r["name"].lower().replace("-","").replace("_","")
-        live_map[rname] = r
+    if stats.top_languages and stats.total_language_bytes:
+        lines.append("**Top languages**")
+        lines.append("```text")
+        for lang in stats.top_languages:
+            pct = lang.bytes_ / stats.total_language_bytes * 100
+            lines.append(f"{lang.name:<12} {_bar(pct)}  {pct:5.1f}%")
+        lines.append("```")
+        lines.append("")
 
-    blocks = []
-    blocks.append("| Project | Description | Architecture / Stack | Status |")
-    blocks.append("| :--- | :--- | :--- | :--- |")
-
-    shown_repos = set()
-    for proj in hardcoded:
-        live = {}
-        for keyword in proj["match"]:
-            for key, r in live_map.items():
-                if keyword in key:
-                    live = r
-                    shown_repos.add(r["name"])
-                    break
-            if live:
-                break
-        
-        url = live.get("html_url", f"https://github.com/{USERNAME}")
-        stars = live.get("stargazers_count", 0)
-        stars_str = f" ★ {stars}" if stars > 0 else ""
-        
-        blocks.append(f"| **[{proj['name']}]({url})**{stars_str} | {proj['desc']} | `{proj['stack']}` | {proj['status']} |")
-
-    # Add latest extra public repos
-    extras = [r for r in repos if not r.get("fork") and r["name"] not in shown_repos]
-    extras = sorted(extras, key=lambda r: r.get("updated_at",""), reverse=True)[:3]
-    
-    for r in extras:
-        desc = (r.get("description") or "Repository")[:65]
-        lang = r.get("language") or "Mixed"
-        stars = r.get("stargazers_count", 0)
-        stars_str = f" ★ {stars}" if stars > 0 else ""
-        blocks.append(f"| **[{r['name']}]({r['html_url']})**{stars_str} | {desc} | `{lang}` | Active |")
-
-    return "\n".join(blocks)
-
-def build_activity(events):
-    labels = {
-        "PushEvent":        "Pushed code to",
-        "CreateEvent":      "Created repository",
-        "WatchEvent":       "Starred",
-        "ForkEvent":        "Forked",
-        "PullRequestEvent": "Opened PR in",
-        "IssuesEvent":      "Opened issue in",
-    }
-    lines, seen = [], set()
-    for e in events:
-        t    = e.get("type","")
-        repo = e.get("repo",{}).get("name","?").split("/")[-1]
-        key  = f"{t}:{repo}"
-        if key in seen: continue
-        seen.add(key)
-        label = labels.get(t, "Activity in")
-        lines.append(f"- {label} **{repo}**")
-        if len(lines) >= 5: break
-        if len(lines) >= 6: break
-
-    if not lines:
-        return "- 💤 System currently in standby mode."
+    timestamp = stats.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f"<sub>Last updated {timestamp}</sub>")
+    lines.append("")
+    lines.append(MARKER_END)
     return "\n".join(lines)
 
 
-def generate_readme(user, repos, events):
-    now = datetime.now(timezone.utc)
-    ts = now.strftime("%Y-%m-%d %H:%M UTC")
-    
-    project_rows = build_projects(repos)
-    activity_block = build_activity(events)
+def update_readme(path: Path, block: str) -> bool:
+    """Replace content between markers, or append them if absent.
 
-    return f"""<!-- AUTOMATED SYNC @ {ts} -->
-<div align="center">
-  <img src="assets/banner.png" alt="Cyber Developer Pixel Art" width="100%" style="border-radius:12px; box-shadow: 0 0 20px rgba(255,255,255,0.1);" />
-</div>
+    Returns True if the file's content changed.
+    """
+    pattern = re.compile(re.escape(MARKER_START) + r".*?" + re.escape(MARKER_END), re.DOTALL)
 
-<br/>
+    if path.exists():
+        original = path.read_text(encoding="utf-8")
+    else:
+        original = ""
 
-<div align="center">
-  <a href="https://github.com/piyushCodes7">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=30&duration=3000&pause=1000&color=FFFFFF&center=true&vCenter=true&width=700&height=50&lines=PIYUSH+SHARMA;BACKEND+ENGINEER;AI%2FML+ARCHITECT;SYSTEMS+BUILDER" alt="Typing Header" />
-  </a>
-  <p>
-    <b>BE CSE (AI/ML) @ Chitkara University</b> • <b>CGPA: 9.6</b><br/>
-    <i>Building intelligent systems, scalable APIs, and exploring the depths of machine learning.</i>
-  </p>
-  
-  <p>
-    <a href="https://linkedin.com/in/piyushCodes7"><img src="https://img.shields.io/badge/-LinkedIn-000000?style=for-the-badge&logo=linkedin&logoColor=white&color=090909"/></a>
-    <a href="mailto:sharmapiyush74860@gmail.com"><img src="https://img.shields.io/badge/-Email-000000?style=for-the-badge&logo=gmail&logoColor=white&color=090909"/></a>
-    <a href="https://leetcode.com/piyushCodes7"><img src="https://img.shields.io/badge/-LeetCode-000000?style=for-the-badge&logo=leetcode&logoColor=white&color=090909"/></a>
-  </p>
-</div>
+    if pattern.search(original):
+        updated = pattern.sub(block, original)
+    elif original.strip():
+        updated = original.rstrip("\n") + "\n\n" + block + "\n"
+    else:
+        updated = block + "\n"
 
----
+    if updated == original:
+        return False
 
-### 🚀 Highlighted Engineering Systems
+    path.write_text(updated, encoding="utf-8")
+    return True
 
-<table>
-  <thead>
-    <tr>
-      <th>Project</th>
-      <th>Description</th>
-      <th>Architecture</th>
-    </tr>
-  </thead>
-  <tbody>
-{project_rows}
-  </tbody>
-</table>
 
----
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Regenerate the stats section of a GitHub profile README.")
+    parser.add_argument("--username", default=os.environ.get("GITHUB_ACTOR"), help="GitHub username to fetch stats for")
+    parser.add_argument("--token", default=os.environ.get("GH_README_TOKEN") or os.environ.get("GITHUB_TOKEN"))
+    parser.add_argument("--output", default="README.md", type=Path)
+    parser.add_argument("--svg-dir", default="svg", type=Path)
+    parser.add_argument("--top-languages", default=6, type=int)
+    parser.add_argument(
+        "--exclude-language",
+        action="append",
+        default=[],
+        help="Language name to exclude from the top-languages bar (repeatable)",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Print the generated block instead of writing it")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser.parse_args(argv)
 
-<table width="100%">
-<tr>
-<td width="50%" valign="top">
 
-### 🛠️ Tech Stack & Arsenal
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s: %(message)s")
 
-- **Languages:** Python, C++, C, JavaScript, PHP
-- **Frameworks:** FastAPI, Flask, Pandas, NumPy
-- **Databases:** MySQL, SQLite
-- **Tools:** Linux, Git, Docker, GitHub Actions
+    if not args.username:
+        logger.error("No username given: pass --username or set GITHUB_ACTOR")
+        return 1
+    if not args.token:
+        logger.error("No token given: pass --token or set GH_README_TOKEN (needs `read:user` scope)")
+        return 1
 
-</td>
-<td width="50%" valign="top">
+    try:
+        client = GitHubClient(args.token)
+        data = client.fetch_profile_data(args.username)
+        stats = build_stats(data, args.username, args.top_languages, set(args.exclude_language))
+        block = render_stats_block(stats, args.svg_dir)
+    except GitHubAPIError as exc:
+        logger.error("Failed to build stats: %s", exc)
+        return 1
 
-### ⚡ Live Activity Stream
+    if args.dry_run:
+        print(block)
+        return 0
 
-{activity_block}
+    changed = update_readme(args.output, block)
+    logger.info("%s: %s", args.output, "updated" if changed else "no changes")
 
-</td>
-</tr>
-</table>
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as fh:
+            fh.write(f"changed={'true' if changed else 'false'}\n")
 
----
+    return 0
 
-### 📊 Real-Time Telemetry
-
-<div align="center">
-  <img src="https://github-readme-streak-stats.herokuapp.com/?user=piyushCodes7&theme=tokyonight&hide_border=true&border_radius=10" width="48%" alt="Streak Stat" />
-  <img src="https://github-readme-stats.vercel.app/api?username=piyushCodes7&show_icons=true&theme=tokyonight&hide_border=true&rank_icon=github&border_radius=10" width="48%" alt="GitHub Stats" />
-  <br/><br/>
-  <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=piyushCodes7&layout=compact&theme=tokyonight&hide_border=true&border_radius=10" width="60%" alt="Top Languages" />
-  <br/><br/>
-  <img src="https://ghchart.rshah.org/FFFFFF/piyushCodes7" alt="Piyush's Github Contributions" width="100%" style="filter: invert(1) hue-rotate(180deg);" />
-</div>
-
-<br/>
-<div align="center">
-  <sub>🤖 <i>Auto-updated every 6 hours via GitHub Actions • Last Sync: {ts}</i></sub>
-</div>
-"""
-
-def main():
-    print("[BOOT] README generator v5 starting...")
-    user = fetch_user()
-    if not user:
-        print("[ERROR] Could not fetch user. Check GH_TOKEN.")
-        return
-
-    print(f"[OK] User   : {user.get('login')}")
-    repos  = fetch_repos();  print(f"[OK] Repos  : {len(repos)}")
-    events = fetch_events(); print(f"[OK] Events : {len(events)}")
-
-    readme = generate_readme(user, repos, events)
-    with open("README.md", "w", encoding="utf-8") as f:
-        f.write(readme)
-    print("[DONE] README.md regenerated.")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
