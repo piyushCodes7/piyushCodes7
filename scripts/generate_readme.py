@@ -22,8 +22,8 @@ Auth:
     GitHub -> Settings -> Developer settings -> Personal access tokens ->
     Tokens (classic) -> Generate new token -> check `read:user` (and
     `public_repo` if you want private-repo language stats too).
-    Store it as a repo secret (e.g. README_TOKEN) and export it as
-    GH_README_TOKEN, or pass --token directly.
+    Store it as a repo secret (e.g. GH_TOKEN) and export it as
+    GH_GH_TOKEN, or pass --token directly.
 
 Exit codes:
     0  success (README unchanged or updated)
@@ -310,7 +310,7 @@ def update_readme(path: Path, block: str) -> bool:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Regenerate the stats section of a GitHub profile README.")
     parser.add_argument("--username", default=os.environ.get("GITHUB_ACTOR"), help="GitHub username to fetch stats for")
-    parser.add_argument("--token", default=os.environ.get("GH_README_TOKEN") or os.environ.get("GITHUB_TOKEN"))
+    parser.add_argument("--token", default=os.environ.get("GH_GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
     parser.add_argument("--output", default="README.md", type=Path)
     parser.add_argument("--svg-dir", default="svg", type=Path)
     parser.add_argument("--top-languages", default=6, type=int)
@@ -333,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("No username given: pass --username or set GITHUB_ACTOR")
         return 1
     if not args.token:
-        logger.error("No token given: pass --token or set GH_README_TOKEN (needs `read:user` scope)")
+        logger.error("No token given: pass --token or set GH_GH_TOKEN (needs `read:user` scope)")
         return 1
 
     try:
